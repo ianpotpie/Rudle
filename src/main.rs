@@ -260,12 +260,14 @@ enum SolverCommand {
         n: usize,
     },
     /// Add a word and feedback to narrow the list
-    Guess {
+    Guessed {
         /// The guessed word
         word: String,
         /// Feedback for the guessed word (e.g., "g*y**")
         feedback: String,
     },
+    /// Print the history of guesses and feedback
+    History,
     /// Undo the last guess and restore the word list
     Undo,
     /// Exit the REPL
@@ -327,7 +329,7 @@ pub fn solve(word_list: Vec<Word>) {
                     );
                 }
             }
-            SolverCommand::Guess { word, feedback } => {
+            SolverCommand::Guessed { word, feedback } => {
                 let feedback = Feedback::from_strings(&word, &feedback);
                 println!("{}", feedback);
                 let removed_words;
@@ -338,6 +340,11 @@ pub fn solve(word_list: Vec<Word>) {
                 word_score_lists.push(None);
                 guess_history.push(feedback);
                 removed_words_lists.push(removed_words);
+            }
+            SolverCommand::History => {
+                for (i, feedback) in guess_history.iter().enumerate() {
+                    println!("{}: {}", i + 1, feedback);
+                }
             }
             SolverCommand::Undo => {
                 if let Some(feedback) = guess_history.pop() {
