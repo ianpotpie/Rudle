@@ -17,6 +17,7 @@ const MAX_ATTEMPTS: usize = 6;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// The whether to solve the wordle or play it
+    /// Possible values: "play", "solve"
     #[arg(short, long)]
     mode: String,
 
@@ -77,10 +78,7 @@ fn play(word_list: Vec<Word>) {
         .expect("Word list is empty");
 
     println!("Welcome to Wordle! Guess the {WORDLE_SZ}-letter word. You have 6 attempts.\n");
-    println!(
-        "Letters are marked {} if they don't appear in the word.",
-        "red".red()
-    );
+    println!("Letters are marked grey if they don't appear in the word.");
     println!(
         "Letters are marked {} if they are in the wrong position.",
         "yellow".yellow()
@@ -131,7 +129,7 @@ fn play(word_list: Vec<Word>) {
         attempts += 1;
     }
 
-    if attempts == 0 {
+    if attempts == MAX_ATTEMPTS {
         let secret_word: String = secret_word.iter().collect();
         println!(
             "{} The correct word was: {}",
@@ -177,7 +175,7 @@ enum SolverCommand {
     Exit,
 }
 
-const HELP_MESSAGE: &str = "  
+const HELP_MESSAGE: &str = "
 top <n>              Print the top n best guesses with their scores, given the
                      remaining possible answers. Scores are the percentage by 
                      which a guessed word reduces the list of possible remaining 
@@ -201,16 +199,15 @@ undo                 Undo the last guess and restore the word list
 
 help                 Print the help message, listing the available commands.
 
-exit                 Exit the REPL
-";
+exit                 Exit the REPL";
 
 fn solve(word_list: Vec<Word>) {
     let mut remaining_words = word_list;
     let mut removed_words_lists: Vec<Vec<Word>> = vec![];
     let mut guess_history: Vec<(Word, Hint)> = vec![];
 
-    let mut word_score_lists: Vec<Option<Vec<(Word, f32, f32)>>> = vec![];
-    word_score_lists.push(None);
+    let mut word_score_lists: Vec<Vec<(Word, f32, f32)>> = vec![];
+    word_score_lists.push(get_scores(&remaining_words));
 
     println!("Starting Wordle Solver REPL. Type 'help' for commands.");
 
@@ -247,11 +244,6 @@ fn solve(word_list: Vec<Word>) {
             SolverCommand::Top { n } => {
                 let n_guesses = word_score_lists.len();
                 let scores = &word_score_lists[n_guesses - 1];
-                if scores.is_none() {
-                    let scores = get_scores(&remaining_words);
-                    word_score_lists[n_guesses - 1] = Some(scores);
-                }
-                let scores = word_score_lists[n_guesses - 1].as_ref().unwrap();
 
                 println!("Rank | Word  | Expected | Worst-Case ");
                 println!("-----|-------|----------|------------");
@@ -278,13 +270,6 @@ fn solve(word_list: Vec<Word>) {
                 };
                 let n_guesses = word_score_lists.len();
                 let scores = &word_score_lists[n_guesses - 1];
-                if scores.is_none() {
-                    let scores = get_scores(&remaining_words);
-                    word_score_lists[n_guesses - 1] = Some(scores);
-                }
-                let scores = word_score_lists[n_guesses - 1].as_ref().expect(
-                    "No scores found. Something went wrong. Scores should have been calculated.",
-                );
 
                 if let Some((i, (_, avg_score, min_score))) =
                     scores.iter().enumerate().find(|(_, (w, _, _))| w == &word)
@@ -319,7 +304,7 @@ fn solve(word_list: Vec<Word>) {
                 });
                 println!("Removed {} words.", removed_words.len());
                 println!("{} possible words remaining.", remaining_words.len());
-                word_score_lists.push(None);
+                word_score_lists.push(get_scores(&remaining_words));
                 guess_history.push((guess, hint));
                 removed_words_lists.push(removed_words);
             }
@@ -355,6 +340,7 @@ fn solve(word_list: Vec<Word>) {
 
 fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
     // Create and configure the progress bar
+    println!("Calculating new word scores...");
     let pb = ProgressBar::new(words.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
