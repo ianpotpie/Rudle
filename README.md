@@ -84,14 +84,14 @@ Enter the interactive REPL for solving Wordle puzzles.
 
 ##### REPL Commands:
 
-| Command                 | Description                                                           |
-| ----------------------- | --------------------------------------------------------------------- |
-| `top <n>`               | Show the top `n` guesses and their scores.                            |
-| `score <word>`          | Calculate and display the score of a specific word.                   |
-| `guessed <word> <hint>` | Add a guessed word and its feedback to narrow down the possibilities. |
-| `history`               | Display the history of guesses and feedback.                          |
-| `undo`                  | Undo the last guess and restore the word list.                        |
-| `exit`                  | Exit the REPL.                                                        |
+| Command              | Description                                                           |
+| -------------------- | --------------------------------------------------------------------- |
+| `top <n>`            | Show the top `n` guesses and their scores.                            |
+| `score <word>`       | Calculate and display the score of a specific word.                   |
+| `hint <word> <hint>` | Add a guessed word and its feedback to narrow down the possibilities. |
+| `history`            | Display the history of guesses and feedback.                          |
+| `undo`               | Undo the last guess and restore the word list.                        |
+| `exit`               | Exit the REPL.                                                        |
 
 #### Example of Hint Format:
 
