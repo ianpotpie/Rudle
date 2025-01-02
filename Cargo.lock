@@ -441,7 +441,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rurdle"
+name = "rudle"
 version = "0.1.0"
 dependencies = [
  "clap",

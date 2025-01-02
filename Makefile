@@ -1,10 +1,10 @@
 debug:
 	cargo build
-	cp target/debug/rurdle ./rurdle
+	cp target/debug/rudle ./rudle
 
 release:
 	cargo build --release
-	cp target/release/rurdle ./rurdle
+	cp target/release/rudle ./rudle
 
 clean:
 	cargo clean
