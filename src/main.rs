@@ -162,8 +162,8 @@ enum SolverCommand {
         /// The word to score
         word: String,
     },
-    /// Add a word and feedback to narrow the list
-    Guessed {
+    /// Add a word and its hint to narrow the list
+    Hint {
         /// The guessed word
         guess: String,
         /// Feedback for the guessed word (e.g., "g*y**")
@@ -176,6 +176,33 @@ enum SolverCommand {
     /// Exit the REPL
     Exit,
 }
+
+const HELP_MESSAGE: &str = "  
+top <n>              Print the top n best guesses with their scores, given the
+                     remaining possible answers. Scores are the percentage by 
+                     which a guessed word reduces the list of possible remaining 
+                     answers.
+
+score <word>         Print the scores of a word, given the remaining possible 
+                     answers. Scores are the percentage by which a guessed word 
+                     reduces the list of possible remaining answers. 
+
+hint <word> <hint>   Add a word and its hint to reduce the possible answers.
+                     For <word> retype the guessed word.
+                     Here is how to type <hint>:
+                     - If a letter is green/guessed correctly, retype the letter
+                     - If a letter is yellow/misplaced, type '*' in its position
+                     - If a letter is grey/incorrect, type '_' in its position
+                     Example: 'hint hello h*ll_'
+
+history              Print the history of guesses and feedback
+
+undo                 Undo the last guess and restore the word list
+
+help                 Print the help message, listing the available commands.
+
+exit                 Exit the REPL
+";
 
 fn solve(word_list: Vec<Word>) {
     let mut remaining_words = word_list;
@@ -202,26 +229,15 @@ fn solve(word_list: Vec<Word>) {
         args.extend(input.split_whitespace());
 
         if args.len() == 2 && args[1] == "help" {
-            println!("Commands:");
-            println!("  top <n> - Print the top n best guesses with their scores, given the current word list.");
-            println!("            Scores are the expected percent-reduction of the word list after guessing a word.");
-            println!("  score <word> - Print the score of a word, given the current word list.");
-            println!("  guessed <word> <feedback> - Add a word and feedback to narrow the list");
-            println!("                              Rewriting a letter indicates a match.");
-            println!("                              Use \"*\" to represent a misplaced letter.");
-            println!("                              Use \"_\" to represent an incorrect letter.");
-            println!("                              Example: guessed hello h*ll_");
-            println!("  history - Print the history of guesses and feedback");
-            println!("  undo - Undo the last guess and restore the word list");
-            println!("  exit - Exit the REPL");
+            println!("{}", HELP_MESSAGE);
             continue;
         }
 
         // Parse the input into commands
         let args = match SolverArgs::try_parse_from(args) {
             Ok(parsed) => parsed,
-            Err(err) => {
-                println!("Error: {}", err);
+            Err(_) => {
+                println!("Unrecognized command. Type 'help' for commands.");
                 continue;
             }
         };
@@ -280,7 +296,7 @@ fn solve(word_list: Vec<Word>) {
                     println!("Word not found in word list.");
                 }
             }
-            SolverCommand::Guessed { guess, hint } => {
+            SolverCommand::Hint { guess, hint } => {
                 let guess = match Word::from_string(&guess) {
                     Ok(w) => w,
                     Err(e) => {
@@ -551,7 +567,7 @@ fn print_hint(hint: &Hint, guess: &Word) {
         .map(|(c, h)| match h {
             LetterHint::Correct => c.to_string().green().to_string(),
             LetterHint::Misplaced => c.to_string().yellow().to_string(),
-            LetterHint::Incorrect => c.to_string().red().to_string(),
+            LetterHint::Incorrect => c.to_string().white().to_string(),
         })
         .collect();
     println!("{}", colored_guess.join(""));
