@@ -55,7 +55,7 @@ fn load_words(file: String) -> Result<Vec<Word>, io::Error> {
 
     for word in reader.lines().map_while(Result::ok) {
         if is_valid_word(&word) {
-            let char_array = string_to_char_array(&word).unwrap();
+            let char_array = string_to_word(&word).unwrap();
             unique_words.insert(char_array);
         }
     }
@@ -66,7 +66,7 @@ fn load_words(file: String) -> Result<Vec<Word>, io::Error> {
     Ok(words)
 }
 
-fn string_to_char_array(s: &str) -> Result<Word, String> {
+fn string_to_word(s: &str) -> Result<Word, String> {
     let chars: Vec<char> = s.chars().collect();
 
     if chars.len() != WORDLE_SZ {
@@ -128,7 +128,7 @@ fn play(word_list: Vec<[char; 5]>) {
             continue;
         }
 
-        let guess = string_to_char_array(&guess).unwrap(); //TODO: deal with bad length better
+        let guess = string_to_word(&guess).unwrap(); //TODO: deal with bad length better
         if !word_list.contains(&guess) {
             println!("Invalid word. Please try again.\n");
             continue;
@@ -363,7 +363,7 @@ pub fn solve(word_list: Vec<Word>) {
                 }
             }
             SolverCommand::Score { word } => {
-                let word = string_to_char_array(&word).unwrap();
+                let word = string_to_word(&word).unwrap();
                 let n_guesses = word_score_lists.len();
                 let scores = &word_score_lists[n_guesses - 1];
                 if scores.is_none() {
@@ -383,7 +383,7 @@ pub fn solve(word_list: Vec<Word>) {
                 }
             }
             SolverCommand::Guessed { word, hint } => {
-                let word = string_to_char_array(&word).unwrap();
+                let word = string_to_word(&word).unwrap();
                 let hint = string_to_hint(&hint, &word).unwrap();
                 let feedback = Feedback { word, hint };
                 println!("{}", feedback);
