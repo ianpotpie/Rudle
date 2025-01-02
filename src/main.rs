@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{self, BufRead, BufReader, Write};
 use std::iter::zip;
 
@@ -55,42 +56,21 @@ fn load_words(file: String) -> Result<Vec<Word>, io::Error> {
 
     for word in reader.lines().map_while(Result::ok) {
         if is_valid_word(&word) {
-            let char_array = string_to_word(&word).unwrap();
-            unique_words.insert(char_array);
+            let word = Word::from_string(&word).unwrap();
+            unique_words.insert(word);
         }
     }
 
     let words: Vec<Word> = unique_words.into_iter().collect();
-
     println!("Loaded {} unique words", words.len());
     Ok(words)
-}
-
-fn string_to_word(s: &str) -> Result<Word, String> {
-    let chars: Vec<char> = s.chars().collect();
-
-    if chars.len() != WORDLE_SZ {
-        return Err(format!(
-            "Input string must be {} characters long.",
-            WORDLE_SZ
-        ));
-    }
-
-    // make the word upper case
-    let word: Word = chars
-        .iter()
-        .map(|c| c.to_ascii_uppercase())
-        .collect::<Vec<char>>()
-        .try_into()
-        .expect("Conversion failed");
-    Ok(word)
 }
 
 fn is_valid_word(word: &str) -> bool {
     word.len() == WORDLE_SZ && word.chars().all(char::is_alphabetic)
 }
 
-fn play(word_list: Vec<[char; 5]>) {
+fn play(word_list: Vec<Word>) {
     // Select a random word from the word list
     let secret_word = word_list
         .choose(&mut rand::thread_rng())
@@ -121,14 +101,20 @@ fn play(word_list: Vec<[char; 5]>) {
         std::io::stdin()
             .read_line(&mut guess)
             .expect("Failed to read input");
-        let guess = guess.trim().to_uppercase();
+        let guess = guess.trim();
 
         if guess.len() != WORDLE_SZ {
             println!("Please enter a {WORDLE_SZ}-letter word.\n");
             continue;
         }
 
-        let guess = string_to_word(&guess).unwrap(); //TODO: deal with bad length better
+        if !guess.chars().all(char::is_alphabetic) {
+            println!("Please enter a word containing only alphabetic characters.\n");
+            continue;
+        }
+
+        let guess = Word::from_string(guess).unwrap();
+
         if !word_list.contains(&guess) {
             println!("Invalid word. Please try again.\n");
             continue;
@@ -140,8 +126,8 @@ fn play(word_list: Vec<[char; 5]>) {
         }
 
         // Provide feedback for the guess
-        let feedback = Feedback::from_comparison(&guess, secret_word);
-        println!("{}", feedback);
+        let hint = Hint::from_guess_and_answer(&guess, secret_word);
+        print_hint(&hint, &guess);
         attempts -= 1;
     }
 
@@ -152,76 +138,6 @@ fn play(word_list: Vec<[char; 5]>) {
             "Game Over!".red(),
             secret_word.green()
         );
-    }
-}
-
-/// A hint for a given letter
-#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
-enum LetterHint {
-    /// The letter is in the word and in the correct position
-    Correct,
-    /// The letter is in the word but in the wrong position
-    Misplaced,
-    /// The letter is not in the word
-    Incorrect,
-}
-
-type Word = [char; WORDLE_SZ];
-type Hint = [LetterHint; WORDLE_SZ];
-
-#[derive(Debug, Clone, PartialEq)]
-struct Feedback {
-    word: Word,
-    hint: Hint,
-}
-
-impl fmt::Display for Feedback {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let colored_guess: Vec<String> = self
-            .word
-            .iter()
-            .zip(self.hint.iter())
-            .map(|(c, h)| match h {
-                LetterHint::Correct => c.to_string().green().to_string(),
-                LetterHint::Misplaced => c.to_string().yellow().to_string(),
-                LetterHint::Incorrect => c.to_string().red().to_string(),
-            })
-            .collect();
-        write!(f, "{}", colored_guess.join(""))
-    }
-}
-
-impl Feedback {
-    fn from_comparison(guess: &Word, answer: &Word) -> Self {
-        let mut hint: Hint = [LetterHint::Incorrect; WORDLE_SZ];
-        let mut answer_chars = *answer;
-
-        // First pass: Check for correct letters (LetterHint::Correct)
-        for (i, (g, a)) in zip(guess, answer).enumerate() {
-            if g == a {
-                hint[i] = LetterHint::Correct;
-                answer_chars[i] = '_'; // Mark this character as used
-            }
-        }
-
-        // Second pass: Check for misplaced letters (LetterHint::Misplaced)
-        for (i, g) in guess.iter().enumerate() {
-            if hint[i] == LetterHint::Correct {
-                continue; // Skip already correct letters
-            }
-
-            if let Some(pos) = answer_chars.iter().position(|&a| a == *g) {
-                hint[i] = LetterHint::Misplaced;
-                answer_chars[pos] = '_'; // Mark this character as used
-            }
-        }
-
-        Self { word: *guess, hint }
-    }
-
-    fn fits(&self, word: &Word) -> bool {
-        let hint = get_hint(&self.word, word);
-        hint == self.hint
     }
 }
 
@@ -249,7 +165,7 @@ enum SolverCommand {
     /// Add a word and feedback to narrow the list
     Guessed {
         /// The guessed word
-        word: String,
+        guess: String,
         /// Feedback for the guessed word (e.g., "g*y**")
         hint: String,
     },
@@ -261,39 +177,10 @@ enum SolverCommand {
     Exit,
 }
 
-fn string_to_hint(s: &str, word: &Word) -> Result<Hint, String> {
-    let chars: Vec<char> = s.chars().collect();
-
-    if chars.len() != WORDLE_SZ {
-        return Err(format!(
-            "Input string must be {} characters long.",
-            WORDLE_SZ
-        ));
-    }
-
-    for (&c, &w) in zip(chars.iter(), word.iter()) {
-        if c != '*' && c != '_' && c != w {
-            return Err("Invalid hint character".to_string());
-        }
-    }
-
-    let hint: Hint = zip(chars, word)
-        .map(|(c, &w)| match c {
-            _ if (c == w) => LetterHint::Correct,
-            '*' => LetterHint::Misplaced,
-            '_' => LetterHint::Incorrect,
-            _ => panic!("This case should have been caught earlier"),
-        })
-        .collect::<Vec<LetterHint>>()
-        .try_into()
-        .expect("Conversion failed");
-    Ok(hint)
-}
-
-pub fn solve(word_list: Vec<Word>) {
+fn solve(word_list: Vec<Word>) {
     let mut remaining_words = word_list;
     let mut removed_words_lists: Vec<Vec<Word>> = vec![];
-    let mut guess_history: Vec<Feedback> = vec![];
+    let mut guess_history: Vec<(Word, Hint)> = vec![];
 
     let mut word_score_lists: Vec<Option<Vec<(Word, f32)>>> = vec![];
     word_score_lists.push(None);
@@ -363,14 +250,22 @@ pub fn solve(word_list: Vec<Word>) {
                 }
             }
             SolverCommand::Score { word } => {
-                let word = string_to_word(&word).unwrap();
+                let word = match Word::from_string(&word) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        continue;
+                    }
+                };
                 let n_guesses = word_score_lists.len();
                 let scores = &word_score_lists[n_guesses - 1];
                 if scores.is_none() {
                     let scores = get_scores(&remaining_words);
                     word_score_lists[n_guesses - 1] = Some(scores);
                 }
-                let scores = word_score_lists[n_guesses - 1].as_ref().unwrap();
+                let scores = word_score_lists[n_guesses - 1].as_ref().expect(
+                    "No scores found. Something went wrong. Scores should have been calculated.",
+                );
 
                 if let Some((_, score)) = scores.iter().find(|(w, _)| w == &word) {
                     println!(
@@ -382,28 +277,43 @@ pub fn solve(word_list: Vec<Word>) {
                     println!("Word not found in word list.");
                 }
             }
-            SolverCommand::Guessed { word, hint } => {
-                let word = string_to_word(&word).unwrap();
-                let hint = string_to_hint(&hint, &word).unwrap();
-                let feedback = Feedback { word, hint };
-                println!("{}", feedback);
+            SolverCommand::Guessed { guess, hint } => {
+                let guess = match Word::from_string(&guess) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        continue;
+                    }
+                };
+                let hint = match Hint::from_string(&hint, &guess) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        continue;
+                    }
+                };
+                print_hint(&hint, &guess);
                 let removed_words;
-                (remaining_words, removed_words) =
-                    remaining_words.into_iter().partition(|w| feedback.fits(w));
+                (remaining_words, removed_words) = remaining_words.into_iter().partition(|w| {
+                    let h = Hint::from_guess_and_answer(&guess, w);
+                    h == hint
+                });
                 println!("Removed {} words.", removed_words.len());
                 println!("{} possible words remaining.", remaining_words.len());
                 word_score_lists.push(None);
-                guess_history.push(feedback);
+                guess_history.push((guess, hint));
                 removed_words_lists.push(removed_words);
             }
             SolverCommand::History => {
-                for (i, feedback) in guess_history.iter().enumerate() {
-                    println!("{}: {}", i + 1, feedback);
+                for (i, (guess, hint)) in guess_history.iter().enumerate() {
+                    print!("{}: ", i + 1);
+                    print_hint(hint, guess);
                 }
             }
             SolverCommand::Undo => {
-                if let Some(feedback) = guess_history.pop() {
-                    println!("Undoing last guess: {}", feedback);
+                if let Some((guess, hint)) = guess_history.pop() {
+                    print!("Undoing last guess: ");
+                    print_hint(&hint, &guess);
                     let last_removed_words = removed_words_lists.pop().expect(
                         "No words to undo, mismatch between history and removed_words_lists",
                     );
@@ -449,7 +359,7 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
 
                 // Accumulate frequencies for all possible answers
                 for answer in words.iter() {
-                    let hint = get_hint(guess, answer);
+                    let hint = Hint::from_guess_and_answer(guess, answer);
                     let freq = hint_frequencies.entry(hint).or_insert(0.0);
                     *freq += freq_unit;
                 }
@@ -469,9 +379,7 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
 
             chunk_scores
         })
-        // Flatten the results of each chunk into a single parallel iterator
         .flat_map_iter(|chunk_scores| chunk_scores)
-        // Collect all scores into a vector
         .collect();
 
     pb.finish_with_message("Scoring complete!");
@@ -482,29 +390,163 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
     sorted_scores
 }
 
-fn get_hint(guess: &[char; 5], answer: &[char; 5]) -> [LetterHint; 5] {
-    let mut hint: Hint = [LetterHint::Incorrect; WORDLE_SZ];
-    let mut answer_chars = *answer;
+#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
+struct Word {
+    chars: [char; WORDLE_SZ],
+}
 
-    // First pass: Check for correct letters (LetterHint::Correct)
-    for (i, (g, a)) in zip(guess, answer).enumerate() {
-        if g == a {
-            hint[i] = LetterHint::Correct;
-            answer_chars[i] = '_'; // Mark this character as used
+impl Word {
+    fn new(chars: [char; WORDLE_SZ]) -> Result<Self, String> {
+        if !chars.iter().all(|c| char::is_alphabetic(*c)) {
+            return Err("Input string must contain only alphabetic characters.".to_string());
         }
+
+        if !chars.iter().all(|c| c.is_ascii_uppercase()) {
+            return Err("Input string must contain only uppercase characters.".to_string());
+        }
+
+        Ok(Self { chars })
     }
 
-    // Second pass: Check for misplaced letters (LetterHint::Misplaced)
-    for (i, g) in guess.iter().enumerate() {
-        if hint[i] == LetterHint::Correct {
-            continue; // Skip already correct letters
+    fn from_string(s: &str) -> Result<Self, String> {
+        if s.len() != WORDLE_SZ {
+            return Err(format!(
+                "Input string must be {} characters long.",
+                WORDLE_SZ
+            ));
         }
 
-        if let Some(pos) = answer_chars.iter().position(|&a| a == *g) {
-            hint[i] = LetterHint::Misplaced;
-            answer_chars[pos] = '_'; // Mark this character as used
+        if !s.chars().all(char::is_alphabetic) {
+            return Err("Input string must contain only alphabetic characters.".to_string());
         }
+
+        let word: [char; WORDLE_SZ] = s
+            .chars()
+            .map(|c| c.to_ascii_uppercase())
+            .collect::<Vec<char>>()
+            .try_into()
+            .expect("Conversion failed");
+
+        Self::new(word)
     }
 
-    hint
+    fn iter(&self) -> std::slice::Iter<char> {
+        self.chars.iter()
+    }
+}
+
+impl fmt::Display for Word {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.chars.iter().collect::<String>())
+    }
+}
+
+impl Iterator for Word {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.chars.first().copied()
+    }
+}
+
+/// A hint for a given letter
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
+enum LetterHint {
+    /// The letter is in the word and in the correct position
+    Correct,
+    /// The letter is in the word but in the wrong position
+    Misplaced,
+    /// The letter is not in the word
+    Incorrect,
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+struct Hint {
+    letter_hints: [LetterHint; WORDLE_SZ],
+}
+
+impl Hint {
+    fn new(letter_hints: [LetterHint; WORDLE_SZ]) -> Self {
+        Self { letter_hints }
+    }
+
+    fn from_string(s: &str, guess: &Word) -> Result<Self, String> {
+        let chars: Vec<char> = s.chars().collect();
+
+        if chars.len() != WORDLE_SZ {
+            return Err(format!(
+                "Input string must be {} characters long.",
+                WORDLE_SZ
+            ));
+        }
+
+        for (&c, &w) in zip(chars.iter(), guess.iter()) {
+            if c != '*' && c != '_' && c.to_ascii_uppercase() != w {
+                return Err("Invalid hint character".to_string());
+            }
+        }
+
+        let hint: [LetterHint; WORDLE_SZ] = zip(chars, guess.iter())
+            .map(|(c, w)| match c {
+                _ if (c.to_ascii_uppercase() == *w) => LetterHint::Correct,
+                '*' => LetterHint::Misplaced,
+                '_' => LetterHint::Incorrect,
+                _ => panic!("This case should have been caught earlier"),
+            })
+            .collect::<Vec<LetterHint>>()
+            .try_into()
+            .expect("Conversion failed");
+
+        Ok(Self::new(hint))
+    }
+
+    fn from_guess_and_answer(guess: &Word, answer: &Word) -> Self {
+        let mut letter_hints: [LetterHint; WORDLE_SZ] = [LetterHint::Incorrect; WORDLE_SZ];
+        let mut answer_chars = answer.chars.to_vec();
+
+        // First pass: Check for correct letters (LetterHint::Correct)
+        for (i, (g, a)) in zip(guess.iter(), answer.iter()).enumerate() {
+            if g == a {
+                letter_hints[i] = LetterHint::Correct;
+                answer_chars[i] = '_'; // Mark this character as used
+            }
+        }
+
+        // Second pass: Check for misplaced letters (LetterHint::Misplaced)
+        for (i, g) in guess.iter().enumerate() {
+            if letter_hints[i] == LetterHint::Correct {
+                continue; // Skip already correct letters
+            }
+
+            if let Some(pos) = answer_chars.iter().position(|&a| a == *g) {
+                letter_hints[i] = LetterHint::Misplaced;
+                answer_chars[pos] = '_'; // Mark this character as used
+            }
+        }
+
+        Self { letter_hints }
+    }
+
+    fn iter(&self) -> std::slice::Iter<LetterHint> {
+        self.letter_hints.iter()
+    }
+}
+
+impl Iterator for Hint {
+    type Item = LetterHint;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.letter_hints.first().copied()
+    }
+}
+
+fn print_hint(hint: &Hint, guess: &Word) {
+    let colored_guess: Vec<String> = zip(guess.iter(), hint.iter())
+        .map(|(c, h)| match h {
+            LetterHint::Correct => c.to_string().green().to_string(),
+            LetterHint::Misplaced => c.to_string().yellow().to_string(),
+            LetterHint::Incorrect => c.to_string().red().to_string(),
+        })
+        .collect();
+    println!("{}", colored_guess.join(""));
 }
