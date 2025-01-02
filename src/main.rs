@@ -260,6 +260,36 @@ enum SolverCommand {
     /// Exit the REPL
     Exit,
 }
+
+fn string_to_hint(s: &str, word: &Word) -> Result<Hint, String> {
+    let chars: Vec<char> = s.chars().collect();
+
+    if chars.len() != WORDLE_SZ {
+        return Err(format!(
+            "Input string must be {} characters long.",
+            WORDLE_SZ
+        ));
+    }
+
+    for (&c, &w) in zip(chars.iter(), word.iter()) {
+        if c != '*' && c != '_' && c != w {
+            return Err("Invalid hint character".to_string());
+        }
+    }
+
+    let hint: Hint = zip(chars, word)
+        .map(|(c, &w)| match c {
+            _ if (c == w) => LetterHint::Correct,
+            '*' => LetterHint::Misplaced,
+            '_' => LetterHint::Incorrect,
+            _ => panic!("This case should have been caught earlier"),
+        })
+        .collect::<Vec<LetterHint>>()
+        .try_into()
+        .expect("Conversion failed");
+    Ok(hint)
+}
+
 pub fn solve(word_list: Vec<Word>) {
     let mut remaining_words = word_list;
     let mut removed_words_lists: Vec<Vec<Word>> = vec![];
