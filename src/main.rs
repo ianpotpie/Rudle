@@ -171,14 +171,14 @@ type Hint = [LetterHint; WORDLE_SZ];
 
 #[derive(Debug, Clone, PartialEq)]
 struct Feedback {
-    guess: Word,
+    word: Word,
     hint: Hint,
 }
 
 impl fmt::Display for Feedback {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let colored_guess: Vec<String> = self
-            .guess
+            .word
             .iter()
             .zip(self.hint.iter())
             .map(|(c, h)| match h {
@@ -237,14 +237,11 @@ impl Feedback {
             }
         }
 
-        Self {
-            guess: *guess,
-            hint,
-        }
+        Self { word: *guess, hint }
     }
 
     fn fits(&self, word: &Word) -> bool {
-        let hint = get_hint(&self.guess, word);
+        let hint = get_hint(&self.word, word);
         hint == self.hint
     }
 }
@@ -265,12 +262,17 @@ enum SolverCommand {
         /// Number of guesses to print
         n: usize,
     },
+    /// Print the score of a word
+    Score {
+        /// The word to score
+        word: String,
+    },
     /// Add a word and feedback to narrow the list
     Guessed {
         /// The guessed word
         word: String,
         /// Feedback for the guessed word (e.g., "g*y**")
-        feedback: String,
+        hint: String,
     },
     /// Print the history of guesses and feedback
     History,
