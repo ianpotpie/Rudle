@@ -192,27 +192,6 @@ impl fmt::Display for Feedback {
 }
 
 impl Feedback {
-    fn from_strings(guess: &str, hint: &str) -> Self {
-        let mut guess_array: Word = ['_'; WORDLE_SZ];
-        let mut hint_array: Hint = [LetterHint::Incorrect; WORDLE_SZ];
-        for (i, (g, h)) in zip(guess.chars(), hint.chars()).enumerate() {
-            match h {
-                h if (g.to_ascii_uppercase() == h.to_ascii_uppercase()) => {
-                    hint_array[i] = LetterHint::Correct
-                }
-                '*' => hint_array[i] = LetterHint::Misplaced,
-                '_' => hint_array[i] = LetterHint::Incorrect,
-                _ => panic!("Invalid letter hint"),
-            }
-            guess_array[i] = g;
-        }
-
-        Self {
-            guess: guess_array,
-            hint: hint_array,
-        }
-    }
-
     fn from_comparison(guess: &Word, answer: &Word) -> Self {
         let mut hint: Hint = [LetterHint::Incorrect; WORDLE_SZ];
         let mut answer_chars = *answer;
