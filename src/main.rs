@@ -76,8 +76,14 @@ fn string_to_char_array(s: &str) -> Result<Word, String> {
         ));
     }
 
-    let array: Word = chars.try_into().expect("Conversion failed");
-    Ok(array)
+    // make the word upper case
+    let word: Word = chars
+        .iter()
+        .map(|c| c.to_ascii_uppercase())
+        .collect::<Vec<char>>()
+        .try_into()
+        .expect("Conversion failed");
+    Ok(word)
 }
 
 fn is_valid_word(word: &str) -> bool {
