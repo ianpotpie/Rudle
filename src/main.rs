@@ -297,6 +297,20 @@ pub fn solve(word_list: Vec<Word>) {
         let mut args: Vec<&str> = vec!["repl"];
         args.extend(input.split_whitespace());
 
+        if args.len() == 2 && args[1] == "help" {
+            println!("Commands:");
+            println!("  top <n> - Print the top n best guesses with their scores, given the current word list");
+            println!("  history - Print the history of guesses and feedback");
+            println!("  guessed <word> <feedback> - Add a word and feedback to narrow the list");
+            println!("                              Rewriting a letter indicates a match.");
+            println!("                              Use \"*\" to represent a misplaced letter.");
+            println!("                              Use \"_\" to represent an incorrect letter.");
+            println!("                              Example: guessed hello h*ll_");
+            println!("  undo - Undo the last guess and restore the word list");
+            println!("  exit - Exit the REPL");
+            continue;
+        }
+
         // Parse the input into commands
         let args = match SolverArgs::try_parse_from(args) {
             Ok(parsed) => parsed,
