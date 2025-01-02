@@ -182,7 +182,7 @@ fn solve(word_list: Vec<Word>) {
     let mut removed_words_lists: Vec<Vec<Word>> = vec![];
     let mut guess_history: Vec<(Word, Hint)> = vec![];
 
-    let mut word_score_lists: Vec<Option<Vec<(Word, f32)>>> = vec![];
+    let mut word_score_lists: Vec<Option<Vec<(Word, f32, f32)>>> = vec![];
     word_score_lists.push(None);
 
     println!("Starting Wordle Solver REPL. Type 'help' for commands.");
@@ -237,15 +237,18 @@ fn solve(word_list: Vec<Word>) {
                 }
                 let scores = word_score_lists[n_guesses - 1].as_ref().unwrap();
 
-                for (i, (word, score)) in scores.iter().enumerate() {
+                println!("Rank | Word  | Expected | Worst-Case ");
+                println!("-----|-------|----------|------------");
+                for (i, (word, avg_score, min_score)) in scores.iter().enumerate() {
                     if i >= n {
                         break;
                     }
                     println!(
-                        "{}: {} ({:.2})",
+                        "{:>4} | {} | {:>7.3}% | {:>9.3}%",
                         i + 1,
                         word.iter().collect::<String>(),
-                        score
+                        avg_score,
+                        min_score
                     );
                 }
             }
@@ -267,12 +270,12 @@ fn solve(word_list: Vec<Word>) {
                     "No scores found. Something went wrong. Scores should have been calculated.",
                 );
 
-                if let Some((_, score)) = scores.iter().find(|(w, _)| w == &word) {
-                    println!(
-                        "Score for {}: {:.2}",
-                        word.iter().collect::<String>(),
-                        score
-                    );
+                if let Some((i, (_, avg_score, min_score))) =
+                    scores.iter().enumerate().find(|(_, (w, _, _))| w == &word)
+                {
+                    println!("Rank: {}", i + 1);
+                    println!("Expected: {:.3}%", avg_score);
+                    println!("Worst-Case: {:.3}%", min_score);
                 } else {
                     println!("Word not found in word list.");
                 }
@@ -334,12 +337,9 @@ fn solve(word_list: Vec<Word>) {
     }
 }
 
-fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
-    let n_words = words.len();
-    let freq_unit = 1.0 / n_words as f32;
-
+fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
     // Create and configure the progress bar
-    let pb = ProgressBar::new(n_words as u64);
+    let pb = ProgressBar::new(words.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
@@ -348,30 +348,36 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
     );
 
     // Process words in chunks of size 500 in parallel
-    let scores: Vec<(Word, f32)> = words
+    let scores: Vec<(Word, f32, f32)> = words
         .par_chunks(100)
         .map(|chunk| {
             let mut chunk_scores = Vec::with_capacity(chunk.len());
 
             // Process each word in the current chunk (sequentially here)
             for guess in chunk {
-                let mut hint_frequencies = HashMap::new();
+                let mut hint_counts = HashMap::new();
 
                 // Accumulate frequencies for all possible answers
                 for answer in words.iter() {
                     let hint = Hint::from_guess_and_answer(guess, answer);
-                    let freq = hint_frequencies.entry(hint).or_insert(0.0);
-                    *freq += freq_unit;
+                    let count = hint_counts.entry(hint).or_insert(0.0);
+                    *count += 1.0;
                 }
 
                 // Calculate score using the accumulated frequencies
-                let entropy = -hint_frequencies
+                let entropy = -hint_counts
                     .values()
-                    .map(|&p| p * f32::ln(p))
+                    .map(|&c| c / words.len() as f32)
+                    .map(|p| p * f32::ln(p))
                     .sum::<f32>();
 
-                let score = (1.0 - f32::exp(-entropy)) * 100.0;
-                chunk_scores.push((*guess, score));
+                let min_score = hint_counts
+                    .values()
+                    .map(|&c| 100.0 * (1.0 - c / words.len() as f32))
+                    .fold(100.0_f32, |a, b| a.min(b));
+
+                let avg_score = (1.0 - f32::exp(-entropy)) * 100.0;
+                chunk_scores.push((*guess, avg_score, min_score));
             }
 
             // To reduce contention, update once per chunk
