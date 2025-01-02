@@ -1,45 +1,46 @@
-# Rurdle
+# Rudle
 
 ## Welcome
 
-Welcome to the **Rurdle**, a Wordle player and solver!
-This program allows you to practice playing Wordle on your own or can help you solve Wordle in a minimal number of guesses!
+Welcome to **Rudle**, a Wordle player and solver!
+This program allows you to play Wordle in your terminal or help you solve Wordle in a minimal number of guesses!
 
 ---
 
-## Features
+### Features
 
 1. **Play Wordle**:
 
-   - Guess a secret 5-letter word within 6 attempts.
+   - Guess a secret 5-letter word with 6 attempts.
    - Get feedback with color-coded hints:
-     - 🟥 **Red**: Letter is not in the word.
+     - ⬜ **Grey**: Letter is not in the word.
      - 🟨 **Yellow**: Letter is in the word but in the wrong position.
-     - 🟩 **Green**: Letter is in the correct position.
+     - 🟩 **Green**: Letter is in the word and in the correct position.
 
-2. **Solve Wordle**:
+2. **Wordle Solver**:
 
    - Use a REPL to interactively narrow down possibilities.
-   - Advanced commands to score words, analyze guesses, and undo actions.
+   - Get best guesses, score words, and see worst-case scenarios.
+   - Scores are based on information theory, reducing the word list optimally.
+     Specifically, words are scored based on the entropy of their hint distributions.
+     This corresponds to the expected amount that they will narrow down the remaining words.
 
 3. **Custom Word Lists**:
 
-   - Load your own word list for the game or solver.
-
-4. **Efficient Scoriang**:
-
-   - Scores are based on information theory, reducing the word list optimally.
-   - Words are scored based on the entropy of their hint distributions.
+   - Load your own vocab list for the game or solver.
 
 ---
 
 ### Installation
 
-Ensure you have Rust installed. Then clone the repository and build the program:
+First, ensure you have Rust installed.
+Use your package manager or follow the instructions here: https://doc.rust-lang.org/book/ch01-01-installation.html
+
+Then clone the repository and build the program:
 
 ```bash
-git clone https://github.com/your-repo/wordle-solver.git
-cd rurdle
+git clone https://github.com/ianpotpie/Rudle.git
+cd rudle
 make release
 ```
 
@@ -50,7 +51,7 @@ make release
 Run the program with `--help` to see available options:
 
 ```bash
-./wordle_solver --help
+./rudle --help
 ```
 
 #### Command-Line Arguments:
@@ -67,7 +68,7 @@ Run the program with `--help` to see available options:
 #### Play Mode
 
 ```bash
-./wordle_solver --mode play --file wordlist.txt
+./rudle --mode play --file wordlist.txt
 ```
 
 - Start a game where you guess the secret word.
@@ -76,7 +77,7 @@ Run the program with `--help` to see available options:
 #### Solve Mode
 
 ```bash
-./wordle_solver --mode solve --file wordlist.txt
+./rudle --mode solve --file wordlist.txt
 ```
 
 Enter the interactive REPL for solving Wordle puzzles.
@@ -94,15 +95,23 @@ Enter the interactive REPL for solving Wordle puzzles.
 
 #### Example of Hint Format:
 
-- Use `_` for incorrect letters.
-- Use `*` for misplaced letters.
-- Reuse the correct letter for matches.
+- Use `_` for incorrect letters (grey).
+- Use `*` for misplaced letters (yellow).
+- Reuse the correct letter for matches (green).
 
-For example:
+For example, if "HELLO" was guessed and the hint
+<span style="background: green; color: black; display: inline-block; padding: 2px 5px 0px 5px;">H</span>
+<span style="background: yellow; color: black; display: inline-block; padding: 2px 5px 0px 5px;">E</span>
+<span style="background: green; color: black; display: inline-block; padding: 2px 5px 0px 5px;">L</span>
+<span style="background: green; color: black; display: inline-block; padding: 2px 5px 0px 5px;">L</span>
+<span style="background: grey; color: black; display: inline-block; padding: 2px 5px 0px 5px;">O</span>
+was given, then entering
 
 ```bash
 guessed hello h*ll_
 ```
+
+to tell rudle the guess you made and the hint your received.
 
 ---
 
