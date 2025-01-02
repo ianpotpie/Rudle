@@ -128,7 +128,7 @@ fn play(word_list: Vec<Word>) {
         // Provide feedback for the guess
         let hint = Hint::from_guess_and_answer(&guess, secret_word);
         print_hint(&hint, &guess);
-        attempts -= 1;
+        attempts += 1;
     }
 
     if attempts == 0 {
