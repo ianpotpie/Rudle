@@ -21,7 +21,7 @@ struct Args {
     mode: String,
 
     /// The file containing the word list
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "words.txt")]
     file: String,
 }
 
