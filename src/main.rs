@@ -316,13 +316,15 @@ pub fn solve(word_list: Vec<Word>) {
 
         if args.len() == 2 && args[1] == "help" {
             println!("Commands:");
-            println!("  top <n> - Print the top n best guesses with their scores, given the current word list");
-            println!("  history - Print the history of guesses and feedback");
+            println!("  top <n> - Print the top n best guesses with their scores, given the current word list.");
+            println!("            Scores are the expected percent-reduction of the word list after guessing a word.");
+            println!("  score <word> - Print the score of a word, given the current word list.");
             println!("  guessed <word> <feedback> - Add a word and feedback to narrow the list");
             println!("                              Rewriting a letter indicates a match.");
             println!("                              Use \"*\" to represent a misplaced letter.");
             println!("                              Use \"_\" to represent an incorrect letter.");
             println!("                              Example: guessed hello h*ll_");
+            println!("  history - Print the history of guesses and feedback");
             println!("  undo - Undo the last guess and restore the word list");
             println!("  exit - Exit the REPL");
             continue;
@@ -360,8 +362,30 @@ pub fn solve(word_list: Vec<Word>) {
                     );
                 }
             }
-            SolverCommand::Guessed { word, feedback } => {
-                let feedback = Feedback::from_strings(&word, &feedback);
+            SolverCommand::Score { word } => {
+                let word = string_to_char_array(&word).unwrap();
+                let n_guesses = word_score_lists.len();
+                let scores = &word_score_lists[n_guesses - 1];
+                if scores.is_none() {
+                    let scores = get_scores(&remaining_words);
+                    word_score_lists[n_guesses - 1] = Some(scores);
+                }
+                let scores = word_score_lists[n_guesses - 1].as_ref().unwrap();
+
+                if let Some((_, score)) = scores.iter().find(|(w, _)| w == &word) {
+                    println!(
+                        "Score for {}: {:.2}",
+                        word.iter().collect::<String>(),
+                        score
+                    );
+                } else {
+                    println!("Word not found in word list.");
+                }
+            }
+            SolverCommand::Guessed { word, hint } => {
+                let word = string_to_char_array(&word).unwrap();
+                let hint = string_to_hint(&hint, &word).unwrap();
+                let feedback = Feedback { word, hint };
                 println!("{}", feedback);
                 let removed_words;
                 (remaining_words, removed_words) =
@@ -431,11 +455,12 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32)> {
                 }
 
                 // Calculate score using the accumulated frequencies
-                let score = -hint_frequencies
+                let entropy = -hint_frequencies
                     .values()
                     .map(|&p| p * f32::ln(p))
                     .sum::<f32>();
 
+                let score = (1.0 - f32::exp(-entropy)) * 100.0;
                 chunk_scores.push((*guess, score));
             }
 
