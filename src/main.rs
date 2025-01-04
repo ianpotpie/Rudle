@@ -126,6 +126,7 @@ fn play(word_list: Vec<Word>) {
         // Provide feedback for the guess
         let hint = Hint::from_guess_and_answer(&guess, secret_word);
         print_hint(&hint, &guess);
+        println!();
         attempts += 1;
     }
 
@@ -175,8 +176,8 @@ enum SolverCommand {
     Exit,
 }
 
-const HELP_MESSAGE: &str = "
-top <n>              Print the top n best guesses with their scores, given the
+const HELP_MESSAGE: &str =
+    "top <n>              Print the top n best guesses with their scores, given the
                      remaining possible answers. Scores are the percentage by 
                      which a guessed word reduces the list of possible remaining 
                      answers.
@@ -297,6 +298,7 @@ fn solve(word_list: Vec<Word>) {
                     }
                 };
                 print_hint(&hint, &guess);
+                println!();
                 let removed_words;
                 (remaining_words, removed_words) = remaining_words.into_iter().partition(|w| {
                     let h = Hint::from_guess_and_answer(&guess, w);
@@ -309,15 +311,31 @@ fn solve(word_list: Vec<Word>) {
                 removed_words_lists.push(removed_words);
             }
             SolverCommand::History => {
-                for (i, (guess, hint)) in guess_history.iter().enumerate() {
+                let mut n_words = remaining_words.len()
+                    + removed_words_lists.iter().map(|l| l.len()).sum::<usize>();
+                println!("Starting with {} words", n_words);
+
+                for (i, ((guess, hint), removed_words)) in
+                    zip(guess_history.iter(), removed_words_lists.iter()).enumerate()
+                {
+                    let percent_removed = removed_words.len() as f32 * 100.0 / n_words as f32;
                     print!("{}: ", i + 1);
                     print_hint(hint, guess);
+                    println!(
+                        " - Removed {} of {} ({:2}%). {} Remaining.",
+                        removed_words.len(),
+                        n_words,
+                        percent_removed,
+                        n_words - removed_words.len()
+                    );
+                    n_words -= removed_words.len();
                 }
             }
             SolverCommand::Undo => {
                 if let Some((guess, hint)) = guess_history.pop() {
                     print!("Undoing last guess: ");
                     print_hint(&hint, &guess);
+                    println!();
                     let last_removed_words = removed_words_lists.pop().expect(
                         "No words to undo, mismatch between history and removed_words_lists",
                     );
@@ -556,5 +574,5 @@ fn print_hint(hint: &Hint, guess: &Word) {
             LetterHint::Incorrect => c.to_string().white().to_string(),
         })
         .collect();
-    println!("{}", colored_guess.join(""));
+    print!("{}", colored_guess.join(""));
 }
