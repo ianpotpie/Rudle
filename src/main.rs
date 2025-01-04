@@ -10,9 +10,6 @@ use std::hash::Hash;
 use std::io::{self, BufRead, BufReader, Write};
 use std::iter::zip;
 
-const WORDLE_SZ: usize = 5;
-const MAX_ATTEMPTS: usize = 6;
-
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -24,17 +21,25 @@ struct Args {
     /// The file containing the word list
     #[arg(short, long, default_value = "words.txt")]
     file: String,
+
+    /// The number of letters in the guesses of the game
+    #[arg(long, default_value = "5")]
+    word_size: usize,
+
+    /// The maximum number of attempts allowed in the game
+    #[arg(long, default_value = "6")]
+    max_attempts: usize,
 }
 
 fn main() -> Result<(), io::Error> {
-    let args: Args = Args::parse();
+    let config: Args = Args::parse();
 
-    let word_list = load_words(args.file)?;
-    let mode = args.mode.as_str();
+    let word_list = load_words(&config)?;
+    let mode = config.mode.as_str();
 
     match mode {
-        "play" => play(word_list),
-        "solve" => solve(word_list),
+        "play" => play(word_list, config),
+        "solve" => solve(word_list, config),
         _ => println!("Invalid mode"),
     }
 
@@ -48,15 +53,15 @@ fn main() -> Result<(), io::Error> {
 /// A Vec of unique words of length WORDLE_SZ (5)
 /// # Errors
 /// If the file cannot be opened
-fn load_words(file: String) -> Result<Vec<Word>, io::Error> {
-    let file = File::open(file)?;
+fn load_words(config: &Args) -> Result<Vec<Word>, io::Error> {
+    let file = File::open(config.file.clone())?;
     let reader = BufReader::new(file);
 
     // Use a HashSet to remove duplicates
     let mut unique_words: HashSet<Word> = HashSet::new();
 
     for word in reader.lines().map_while(Result::ok) {
-        if is_valid_word(&word) {
+        if is_valid_word(&word, config) {
             let word = Word::from_string(&word).unwrap();
             unique_words.insert(word);
         }
@@ -67,17 +72,20 @@ fn load_words(file: String) -> Result<Vec<Word>, io::Error> {
     Ok(words)
 }
 
-fn is_valid_word(word: &str) -> bool {
-    word.len() == WORDLE_SZ && word.chars().all(char::is_alphabetic)
+fn is_valid_word(word: &str, config: &Args) -> bool {
+    word.len() == config.word_size && word.chars().all(char::is_alphabetic)
 }
 
-fn play(word_list: Vec<Word>) {
+fn play(word_list: Vec<Word>, config: Args) {
     // Select a random word from the word list
     let secret_word = word_list
         .choose(&mut rand::thread_rng())
         .expect("Word list is empty");
 
-    println!("Welcome to Wordle! Guess the {WORDLE_SZ}-letter word. You have 6 attempts.\n");
+    println!(
+        "Welcome to Wordle! Guess the {}-letter word. You have 6 attempts.\n",
+        config.word_size
+    );
     println!("Letters are marked grey if they don't appear in the word.");
     println!(
         "Letters are marked {} if they are in the wrong position.",
@@ -90,8 +98,8 @@ fn play(word_list: Vec<Word>) {
 
     let mut attempts = 0;
 
-    while attempts < MAX_ATTEMPTS {
-        println!("You have {} attempts left.", MAX_ATTEMPTS - attempts);
+    while attempts < config.max_attempts {
+        println!("You have {} attempts left.", config.max_attempts - attempts);
         print!("Enter your guess: ");
         Write::flush(&mut std::io::stdout()).unwrap();
 
@@ -101,8 +109,8 @@ fn play(word_list: Vec<Word>) {
             .expect("Failed to read input");
         let guess = guess.trim();
 
-        if guess.len() != WORDLE_SZ {
-            println!("Please enter a {WORDLE_SZ}-letter word.\n");
+        if guess.len() != config.word_size {
+            println!("Please enter a {}-letter word.\n", config.word_size);
             continue;
         }
 
@@ -124,13 +132,13 @@ fn play(word_list: Vec<Word>) {
         }
 
         // Provide feedback for the guess
-        let hint = Hint::from_guess_and_answer(&guess, secret_word);
+        let hint = Hint::from_guess_and_answer(&guess, secret_word).unwrap();
         print_hint(&hint, &guess);
         println!();
         attempts += 1;
     }
 
-    if attempts == MAX_ATTEMPTS {
+    if attempts == config.max_attempts {
         let secret_word: String = secret_word.iter().collect();
         println!(
             "{} The correct word was: {}",
@@ -202,7 +210,7 @@ help                 Print the help message, listing the available commands.
 
 exit                 Exit the REPL";
 
-fn solve(word_list: Vec<Word>) {
+fn solve(word_list: Vec<Word>, config: Args) {
     let mut remaining_words = word_list;
     let mut removed_words_lists: Vec<Vec<Word>> = vec![];
     let mut guess_history: Vec<(Word, Hint)> = vec![];
@@ -297,11 +305,22 @@ fn solve(word_list: Vec<Word>) {
                         continue;
                     }
                 };
+                if guess.len() != config.word_size || hint.len() != config.word_size {
+                    println!(
+                        "Guess and hint must both have a size of {}",
+                        config.word_size
+                    );
+                    continue;
+                }
+                if !guess.iter().all(|c| c.is_alphabetic()) {
+                    println!("Guess must only contain alphabetic characters.");
+                    continue;
+                }
                 print_hint(&hint, &guess);
                 println!();
                 let removed_words;
                 (remaining_words, removed_words) = remaining_words.into_iter().partition(|w| {
-                    let h = Hint::from_guess_and_answer(&guess, w);
+                    let h = Hint::from_guess_and_answer(&guess, w).expect("Invalid hint");
                     h == hint
                 });
                 println!("Removed {} words.", removed_words.len());
@@ -397,7 +416,7 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
                     .fold(100.0_f32, |a, b| a.min(b));
 
                 let avg_score = (1.0 - f32::exp(-entropy)) * 100.0;
-                chunk_scores.push((*guess, avg_score, min_score));
+                chunk_scores.push((guess.clone(), avg_score, min_score));
             }
 
             // To reduce contention, update once per chunk
@@ -416,14 +435,14 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
     sorted_scores
 }
 
-#[derive(PartialEq, Clone, Copy, Hash, Eq, Debug)]
+#[derive(PartialEq, Clone, Hash, Eq, Debug)]
 struct Word {
-    chars: [char; WORDLE_SZ],
+    chars: Vec<char>,
 }
 
 impl Word {
-    fn new(chars: [char; WORDLE_SZ]) -> Result<Self, String> {
-        if !chars.iter().all(|c| char::is_alphabetic(*c)) {
+    fn new(chars: Vec<char>) -> Result<Self, String> {
+        if !chars.iter().all(|c| c.is_alphabetic()) {
             return Err("Input string must contain only alphabetic characters.".to_string());
         }
 
@@ -435,29 +454,21 @@ impl Word {
     }
 
     fn from_string(s: &str) -> Result<Self, String> {
-        if s.len() != WORDLE_SZ {
-            return Err(format!(
-                "Input string must be {} characters long.",
-                WORDLE_SZ
-            ));
-        }
-
         if !s.chars().all(char::is_alphabetic) {
             return Err("Input string must contain only alphabetic characters.".to_string());
         }
 
-        let word: [char; WORDLE_SZ] = s
-            .chars()
-            .map(|c| c.to_ascii_uppercase())
-            .collect::<Vec<char>>()
-            .try_into()
-            .expect("Conversion failed");
+        let chars: Vec<char> = s.chars().map(|c| c.to_ascii_uppercase()).collect();
 
-        Self::new(word)
+        Self::new(chars)
     }
 
     fn iter(&self) -> std::slice::Iter<char> {
         self.chars.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.chars.len()
     }
 }
 
@@ -488,47 +499,42 @@ enum LetterHint {
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 struct Hint {
-    letter_hints: [LetterHint; WORDLE_SZ],
+    letter_hints: Vec<LetterHint>,
 }
 
 impl Hint {
-    fn new(letter_hints: [LetterHint; WORDLE_SZ]) -> Self {
+    fn new(letter_hints: Vec<LetterHint>) -> Self {
         Self { letter_hints }
     }
 
-    fn from_string(s: &str, guess: &Word) -> Result<Self, String> {
-        let chars: Vec<char> = s.chars().collect();
-
-        if chars.len() != WORDLE_SZ {
-            return Err(format!(
-                "Input string must be {} characters long.",
-                WORDLE_SZ
-            ));
-        }
-
-        for (&c, &w) in zip(chars.iter(), guess.iter()) {
+    fn from_string(hint: &str, guess: &Word) -> Result<Self, String> {
+        for (c, &w) in zip(hint.chars(), guess.iter()) {
             if c != '*' && c != '_' && c.to_ascii_uppercase() != w {
                 return Err("Invalid hint character".to_string());
             }
         }
 
-        let hint: [LetterHint; WORDLE_SZ] = zip(chars, guess.iter())
+        let hint: Vec<LetterHint> = zip(hint.chars(), guess.iter())
             .map(|(c, w)| match c {
                 _ if (c.to_ascii_uppercase() == *w) => LetterHint::Correct,
                 '*' => LetterHint::Misplaced,
                 '_' => LetterHint::Incorrect,
                 _ => panic!("This case should have been caught earlier"),
             })
-            .collect::<Vec<LetterHint>>()
-            .try_into()
-            .expect("Conversion failed");
+            .collect::<Vec<LetterHint>>();
 
         Ok(Self::new(hint))
     }
 
-    fn from_guess_and_answer(guess: &Word, answer: &Word) -> Self {
-        let mut letter_hints: [LetterHint; WORDLE_SZ] = [LetterHint::Incorrect; WORDLE_SZ];
-        let mut answer_chars = answer.chars.to_vec();
+    fn from_guess_and_answer(guess: &Word, answer: &Word) -> Result<Self, String> {
+        if guess.len() != answer.len() {
+            return Err("Guess and answer must have the same length".to_string());
+        };
+        if !guess.iter().all(|c| c.is_alphabetic()) && !answer.iter().all(|c| c.is_alphabetic()) {
+            return Err("Guess and answer must contain only alphabetic characters".to_string());
+        }
+        let mut letter_hints: Vec<LetterHint> = vec![LetterHint::Incorrect; guess.len()];
+        let mut answer_chars = answer.chars.clone();
 
         // First pass: Check for correct letters (LetterHint::Correct)
         for (i, (g, a)) in zip(guess.iter(), answer.iter()).enumerate() {
@@ -550,11 +556,15 @@ impl Hint {
             }
         }
 
-        Self { letter_hints }
+        Ok(Self { letter_hints })
     }
 
     fn iter(&self) -> std::slice::Iter<LetterHint> {
         self.letter_hints.iter()
+    }
+
+    fn len(&self) -> usize {
+        self.letter_hints.len()
     }
 }
 
