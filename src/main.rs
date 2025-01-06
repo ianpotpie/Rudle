@@ -13,9 +13,16 @@ use std::iter::zip;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// The whether to solve the wordle or play it
+    /// Whether to solve the wordle or play it
     /// Possible values: "play", "solve"
     #[arg(short, long)]
+    task: String,
+
+    /// Whether the game is in hard mode or easy mode
+    /// If it is in hard mode, hints MUST be used
+    /// i.e. words disqualified from being the answer by previous hints
+    /// cannot be played
+    #[arg(short, long, default_value = "easy")]
     mode: String,
 
     /// The file containing the word list
@@ -35,9 +42,8 @@ fn main() -> Result<(), io::Error> {
     let config: Args = Args::parse();
 
     let word_list = load_words(&config)?;
-    let mode = config.mode.as_str();
 
-    match mode {
+    match config.task.as_str() {
         "play" => play(word_list, config),
         "solve" => solve(word_list, config),
         _ => println!("Invalid mode"),
@@ -163,6 +169,7 @@ enum SolverCommand {
     Top {
         /// Number of guesses to print
         n: usize,
+        strict: Option<String>,
     },
     /// Print the score of a word
     Score {
@@ -185,10 +192,11 @@ enum SolverCommand {
 }
 
 const HELP_MESSAGE: &str =
-    "top <n>              Print the top n best guesses with their scores, given the
+    "top <n> [strict]     Print the top n best guesses with their scores, given the
                      remaining possible answers. Scores are the percentage by 
                      which a guessed word reduces the list of possible remaining 
-                     answers.
+                     answers. If 'strict' is provided, only consider words that
+                     score words that are still in the list of possible answers.
 
 score <word>         Print the scores of a word, given the remaining possible 
                      answers. Scores are the percentage by which a guessed word 
@@ -211,12 +219,13 @@ help                 Print the help message, listing the available commands.
 exit                 Exit the REPL";
 
 fn solve(word_list: Vec<Word>, config: Args) {
-    let mut remaining_words = word_list;
-    let mut removed_words_lists: Vec<Vec<Word>> = vec![];
+    let mut remaining_guesses = word_list.clone();
+    let mut remaining_answers = word_list;
+    let mut removed_answers: Vec<Vec<Word>> = vec![];
     let mut guess_history: Vec<(Word, Hint)> = vec![];
 
-    let mut word_score_lists: Vec<Vec<(Word, f32, f32)>> = vec![];
-    word_score_lists.push(get_scores(&remaining_words));
+    let mut word_scores: Vec<Vec<(Word, f32, f32)>> = vec![];
+    word_scores.push(get_scores(&remaining_guesses, &remaining_answers));
 
     println!("Starting Wordle Solver REPL. Type 'help' for commands.");
 
@@ -243,16 +252,30 @@ fn solve(word_list: Vec<Word>, config: Args) {
         let args = match SolverArgs::try_parse_from(args) {
             Ok(parsed) => parsed,
             Err(_) => {
-                println!("Unrecognized command. Type 'help' for commands.");
+                println!("Bad command. Type 'help' for commands.");
                 continue;
             }
         };
 
         // Process the parsed command
         match args.command {
-            SolverCommand::Top { n } => {
-                let n_guesses = word_score_lists.len();
-                let scores = &word_score_lists[n_guesses - 1];
+            SolverCommand::Top { n, strict } => {
+                let answer_scores;
+                let scores = match strict {
+                    None => &word_scores[guess_history.len()],
+                    Some(s) if s == "strict" => {
+                        answer_scores = word_scores[guess_history.len()]
+                            .iter()
+                            .filter(|(w, _, _)| remaining_answers.contains(w))
+                            .cloned()
+                            .collect::<Vec<(Word, f32, f32)>>();
+                        &answer_scores
+                    }
+                    _ => {
+                        println!("Bad command. Type 'help' for commands.");
+                        continue;
+                    }
+                };
 
                 println!("Rank | Word  | Expected | Worst-Case ");
                 println!("-----|-------|----------|------------");
@@ -277,8 +300,7 @@ fn solve(word_list: Vec<Word>, config: Args) {
                         continue;
                     }
                 };
-                let n_guesses = word_score_lists.len();
-                let scores = &word_score_lists[n_guesses - 1];
+                let scores = &word_scores[guess_history.len()];
 
                 if let Some((i, (_, avg_score, min_score))) =
                     scores.iter().enumerate().find(|(_, (w, _, _))| w == &word)
@@ -318,30 +340,34 @@ fn solve(word_list: Vec<Word>, config: Args) {
                 }
                 print_hint(&hint, &guess);
                 println!();
+                remaining_guesses.retain(|w| w != &guess);
                 let removed_words;
-                (remaining_words, removed_words) = remaining_words.into_iter().partition(|w| {
+                (remaining_answers, removed_words) = remaining_answers.into_iter().partition(|w| {
                     let h = Hint::from_guess_and_answer(&guess, w).expect("Invalid hint");
                     h == hint
                 });
                 println!("Removed {} words.", removed_words.len());
-                println!("{} possible words remaining.", remaining_words.len());
-                word_score_lists.push(get_scores(&remaining_words));
+                println!("{} possible answers remaining.", remaining_answers.len());
+                word_scores.push(get_scores(&remaining_guesses, &remaining_answers));
                 guess_history.push((guess, hint));
-                removed_words_lists.push(removed_words);
+                removed_answers.push(removed_words);
             }
             SolverCommand::History => {
-                let mut n_words = remaining_words.len()
-                    + removed_words_lists.iter().map(|l| l.len()).sum::<usize>();
+                let mut n_words = remaining_answers.len()
+                    + removed_answers
+                        .iter()
+                        .map(|answers| answers.len())
+                        .sum::<usize>();
                 println!("Starting with {} words", n_words);
 
                 for (i, ((guess, hint), removed_words)) in
-                    zip(guess_history.iter(), removed_words_lists.iter()).enumerate()
+                    zip(guess_history.iter(), removed_answers.iter()).enumerate()
                 {
                     let percent_removed = removed_words.len() as f32 * 100.0 / n_words as f32;
                     print!("{}: ", i + 1);
                     print_hint(hint, guess);
                     println!(
-                        " - Removed {} of {} ({:2}%). {} Remaining.",
+                        " - Removed {} of {} ({:.2}%). {} Remaining.",
                         removed_words.len(),
                         n_words,
                         percent_removed,
@@ -355,14 +381,15 @@ fn solve(word_list: Vec<Word>, config: Args) {
                     print!("Undoing last guess: ");
                     print_hint(&hint, &guess);
                     println!();
-                    let last_removed_words = removed_words_lists.pop().expect(
+                    let answers = removed_answers.pop().expect(
                         "No words to undo, mismatch between history and removed_words_lists",
                     );
-                    word_score_lists
+                    word_scores
                         .pop()
                         .expect("No word score lists to remove. Something went wrong.");
-                    remaining_words.extend(last_removed_words);
-                    println!("Restored word list to {} words.", remaining_words.len());
+                    remaining_answers.extend(answers);
+                    remaining_guesses.push(guess);
+                    println!("Restored word list to {} words.", remaining_answers.len());
                 } else {
                     println!("Nothing to undo.");
                 }
@@ -375,10 +402,10 @@ fn solve(word_list: Vec<Word>, config: Args) {
     }
 }
 
-fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
+fn get_scores(guesses: &[Word], answers: &[Word]) -> Vec<(Word, f32, f32)> {
     // Create and configure the progress bar
     println!("Calculating new word scores...");
-    let pb = ProgressBar::new(words.len() as u64);
+    let pb = ProgressBar::new(guesses.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
@@ -387,7 +414,7 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
     );
 
     // Process words in chunks of size 500 in parallel
-    let scores: Vec<(Word, f32, f32)> = words
+    let scores: Vec<(Word, f32, f32)> = guesses
         .par_chunks(100)
         .map(|chunk| {
             let mut chunk_scores = Vec::with_capacity(chunk.len());
@@ -397,7 +424,7 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
                 let mut hint_counts = HashMap::new();
 
                 // Accumulate frequencies for all possible answers
-                for answer in words.iter() {
+                for answer in answers.iter() {
                     let hint = Hint::from_guess_and_answer(guess, answer);
                     let count = hint_counts.entry(hint).or_insert(0.0);
                     *count += 1.0;
@@ -406,13 +433,13 @@ fn get_scores(words: &Vec<Word>) -> Vec<(Word, f32, f32)> {
                 // Calculate score using the accumulated frequencies
                 let entropy = -hint_counts
                     .values()
-                    .map(|&c| c / words.len() as f32)
+                    .map(|&c| c / answers.len() as f32)
                     .map(|p| p * f32::ln(p))
                     .sum::<f32>();
 
                 let min_score = hint_counts
                     .values()
-                    .map(|&c| 100.0 * (1.0 - c / words.len() as f32))
+                    .map(|&c| 100.0 * (1.0 - c / answers.len() as f32))
                     .fold(100.0_f32, |a, b| a.min(b));
 
                 let avg_score = (1.0 - f32::exp(-entropy)) * 100.0;
