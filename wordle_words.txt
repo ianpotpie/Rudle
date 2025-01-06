@@ -2041,6 +2041,7 @@ cuzes
 cwtch
 cyano
 cyans
+cyber
 cycad
 cycas
 cyclo
